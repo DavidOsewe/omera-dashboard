@@ -134,6 +134,8 @@
   .composer .headline{font-family:'Inter',sans-serif; font-style:italic; font-size:21px; font-weight:500; line-height:1.35; margin:2px 0 12px 0;}
   .composer .kpi-strip{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
   .kpi-tile{ background:var(--blue-wash); border:1px solid var(--hairline); border-radius:16px; padding:13px 15px; }
+  .kpi-tile.neg{ background:var(--rust-wash); }
+  .kpi-tile.neg .val{ color:var(--rust); }
   .kpi-tile .lbl{font-family:'Inter',sans-serif; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-soft);}
   .kpi-tile .val{font-family:'Inter',sans-serif; font-size:21px; margin-top:5px; font-variant-numeric:tabular-nums;}
   .kpi-tile .delta{font-size:11.5px; margin-top:4px; font-weight:700;}
@@ -171,11 +173,14 @@
   .chart-holder.tall{height:300px;}
   .chart-holder.small{height:170px;}
 
-  .footer-actions{display:flex; gap:34px; margin-top:10px; max-width:340px;}
-  .fa-icon{display:flex; align-items:center; gap:7px; color:var(--ink-faint); font-size:12.5px;}
+  .footer-actions{display:flex; gap:20px; margin-top:10px; max-width:340px;}
+  .fa-icon{display:flex; align-items:center; gap:7px; color:var(--ink-faint); font-size:12.5px;
+    background:none; border:none; padding:4px 8px; border-radius:100px; transition:.15s; }
   .fa-icon svg{width:17px;height:17px;stroke:var(--ink-faint);fill:none;stroke-width:1.8;}
-  .fa-icon:hover{color:var(--blue);}
+  .fa-icon:hover{color:var(--blue); background:var(--blue-wash);}
   .fa-icon:hover svg{stroke:var(--blue);}
+  .fa-icon.active{color:var(--blue-deep); background:var(--blue-wash); font-weight:700;}
+  .fa-icon.active svg{stroke:var(--blue-deep);}
 
   .legend-list{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
   .legend-row{display:flex;align-items:center;gap:9px;font-size:12.5px;}
@@ -365,8 +370,8 @@
             <div class="media-body"><div class="chart-holder tall"><canvas id="revExpChart"></canvas></div></div>
           </div>
           <div class="footer-actions">
-            <span class="fa-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>Monthly detail</span>
-            <span class="fa-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg>Compare</span>
+            <button type="button" class="fa-icon" id="toggleMonthlyDetail"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg><span id="toggleMonthlyDetailLabel">Monthly detail</span></button>
+            <button type="button" class="fa-icon" id="toggleCompare"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg><span id="toggleCompareLabel">Compare</span></button>
           </div>
         </div>
       </div>
@@ -527,6 +532,7 @@
       <div class="disclaimer-card">
         <div class="dtitle">For internal use only</div>
         <p>This dashboard has been prepared solely for the internal management use of Omera Unisex Salon and is not intended for, and should not be relied upon by, any third party. It is provided "as is" without warranty of any kind as to its accuracy, completeness, or fitness for a particular purpose. Omera Unisex Salon and the preparers of this report accept no liability to any third party who chooses to rely on it. This report should not be reproduced, distributed, or disclosed to any party outside the business without prior written consent.</p>
+        <p style="margin-top:10px; font-weight:600; color:var(--ink);">Prepared by: Oandel Advisory — <a href="https://www.oandeladvisory.com" style="color:var(--blue-deep);">www.oandeladvisory.com</a></p>
       </div>
     </div>
 
@@ -579,7 +585,8 @@
 
     <div class="rail-footer">
       Prepared for internal management review from the general ledger.<br>
-      Figures are unaudited · NGN · H1 2026
+      Figures are unaudited · NGN · H1 2026<br>
+      Prepared by: Oandel Advisory — <a href="https://www.oandeladvisory.com" style="color:var(--blue-deep);">oandeladvisory.com</a>
     </div>
   </div>
 
@@ -740,6 +747,8 @@ const SHEET_CONFIG = {
   sofp:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ_7FhA8Fbn60x_P45T_tVP02V_aUF56_DjS1H9wgBfN3qZuw3TT_pOVUKKLvBDjg/pub?gid=1563556219&single=true&output=csv',   // "SOFP Monthly" tab CSV URL
   glData:'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ_7FhA8Fbn60x_P45T_tVP02V_aUF56_DjS1H9wgBfN3qZuw3TT_pOVUKKLvBDjg/pub?gid=216207039&single=true&output=csv',   // "GL Data" tab CSV URL
   staff: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ_7FhA8Fbn60x_P45T_tVP02V_aUF56_DjS1H9wgBfN3qZuw3TT_pOVUKKLvBDjg/pub?gid=1083836078&single=true&output=csv',   // "Staff Breakdown" tab CSV URL
+};
+
 };
 
 function isSheetConfigured(){
@@ -1004,18 +1013,49 @@ let revExpChart, cashChart, segStackChart, segDonutChart, opexStackChart, opexDo
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.color = '#5B6472';
 
+let revExpMode = 'monthly'; // 'monthly' | 'cumulative'
+let revExpCompare = false;
+
+function cumulate(arr){
+  let running = 0;
+  return arr.map(v => (running += v));
+}
+
 function buildRevExpChart(n){
   const ctx = document.getElementById('revExpChart');
   if(revExpChart) revExpChart.destroy();
+
+  const cum = revExpMode==='cumulative';
+  const revArr = cum ? cumulate(D.revenue.slice(0,n)) : D.revenue.slice(0,n);
+  const opexArr = cum ? cumulate(D.total_opex.slice(0,n)) : D.total_opex.slice(0,n);
+  const profitArr = cum ? cumulate(D.profit.slice(0,n)) : D.profit.slice(0,n);
+
+  const datasets = [
+    {type:'bar', label:'Revenue', data:revArr, backgroundColor:BLUE, borderRadius:4, order:2},
+    {type:'bar', label:'Operating expenses', data:opexArr, backgroundColor:'#E7EAF1', borderRadius:4, order:3},
+    {type:'line', label: cum? 'Cumulative profit / (loss)' : 'Profit / (loss)', data:profitArr,
+      borderColor:BRASS, backgroundColor:BRASS, tension:.3, pointRadius:4,
+      pointBackgroundColor: profitArr.map(v=> v<0 ? RUST : BRASS),
+      segment:{ borderColor: sctx => (sctx.p0.parsed.y<0 || sctx.p1.parsed.y<0) ? RUST : BRASS },
+      order:1, yAxisID:'y'}
+  ];
+
+  if(revExpCompare){
+    const priorFrom = fromMonth-n, priorTo = fromMonth-1;
+    if(priorFrom>=1){
+      let priorRev = D_SRC.revenue.slice(priorFrom-1, priorTo);
+      let priorProfit = D_SRC.profit.slice(priorFrom-1, priorTo);
+      if(cum){ priorRev = cumulate(priorRev); priorProfit = cumulate(priorProfit); }
+      const priorLabel = periodLabel(priorFrom, priorTo);
+      datasets.push({type:'line', label:`Revenue — ${priorLabel}`, data:priorRev,
+        borderColor:'#9CB4D9', borderDash:[5,4], pointRadius:0, tension:.3, order:4, yAxisID:'y'});
+      datasets.push({type:'line', label:`Profit — ${priorLabel}`, data:priorProfit,
+        borderColor:'#D9A99C', borderDash:[5,4], pointRadius:0, tension:.3, order:4, yAxisID:'y'});
+    }
+  }
+
   revExpChart = new Chart(ctx, {
-    data:{
-      labels: MONTHS.slice(0,n),
-      datasets:[
-        {type:'bar', label:'Revenue', data:D.revenue.slice(0,n), backgroundColor:BLUE, borderRadius:4, order:2},
-        {type:'bar', label:'Operating expenses', data:D.total_opex.slice(0,n), backgroundColor:'#E7EAF1', borderRadius:4, order:3},
-        {type:'line', label:'Profit / (loss)', data:D.profit.slice(0,n), borderColor:BRASS, backgroundColor:BRASS, tension:.3, pointRadius:4, pointBackgroundColor:BRASS, order:1, yAxisID:'y'}
-      ]
-    },
+    data:{ labels: MONTHS.slice(0,n), datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
       interaction:{mode:'index', intersect:false},
@@ -1335,14 +1375,14 @@ function buildKPIs(n){
   const opexRatio = revTot? opexTot/revTot*100 : 0;
 
   const cards = [
-    {label:'Total revenue', value:nairaFmt(revTot), sub:`Avg ${nairaFmt(avgMonthlyRev,true)}/mo`, delta: momGrowth!==null? `${momGrowth>=0?'▲':'▼'} ${Math.abs(momGrowth).toFixed(1)}% vs prior month` : '', deltaUp: momGrowth>=0},
-    {label:'Net profit', value:nairaFmt(profitTot), sub:`Net margin ${margin.toFixed(1)}%`, delta: profitTot>=0? 'Profitable period':'Loss-making period', deltaUp: profitTot>=0},
-    {label:'Operating expenses', value:nairaFmt(opexTot), sub:`${opexRatio.toFixed(1)}% of revenue`, delta:'', deltaUp:true},
-    {label:'Cash on hand', value:nairaFmt(cashNow), sub:`Since ${MONTHS_FULL[0]}: ${cashChangePct>=0?'+':''}${cashChangePct.toFixed(1)}%`, delta: cashChangePct>=0? 'Building liquidity':'Cash eroding', deltaUp: cashChangePct>=0},
+    {label:'Total revenue', raw: revTot, value:nairaFmt(revTot), sub:`Avg ${nairaFmt(avgMonthlyRev,true)}/mo`, delta: momGrowth!==null? `${momGrowth>=0?'▲':'▼'} ${Math.abs(momGrowth).toFixed(1)}% vs prior month` : '', deltaUp: momGrowth>=0},
+    {label:'Net profit', raw: profitTot, value:nairaFmt(profitTot), sub:`Net margin ${margin.toFixed(1)}%`, delta: profitTot>=0? 'Profitable period':'Loss-making period', deltaUp: profitTot>=0},
+    {label:'Operating expenses', raw: opexTot, value:nairaFmt(opexTot), sub:`${opexRatio.toFixed(1)}% of revenue`, delta:'', deltaUp:true},
+    {label:'Cash on hand', raw: cashNow, value:nairaFmt(cashNow), sub:`Since ${MONTHS_FULL[0]}: ${cashChangePct>=0?'+':''}${cashChangePct.toFixed(1)}%`, delta: cashChangePct>=0? 'Building liquidity':'Cash eroding', deltaUp: cashChangePct>=0},
   ];
 
   document.getElementById('kpiGrid').innerHTML = cards.map(c=>`
-    <div class="kpi-tile">
+    <div class="kpi-tile ${c.raw<0?'neg':''}">
       <div class="lbl">${c.label}</div>
       <div class="val">${c.value}</div>
       <div class="delta ${c.deltaUp?'up':'down'}">${c.delta}</div>
@@ -1607,6 +1647,25 @@ document.getElementById('viewToggle').addEventListener('click', (e)=>{
 
 const refreshBtn = document.getElementById('refreshSync');
 if(refreshBtn) refreshBtn.addEventListener('click', ()=> loadLiveData());
+
+const toggleMonthlyDetailBtn = document.getElementById('toggleMonthlyDetail');
+if(toggleMonthlyDetailBtn){
+  toggleMonthlyDetailBtn.addEventListener('click', ()=>{
+    revExpMode = revExpMode==='monthly' ? 'cumulative' : 'monthly';
+    toggleMonthlyDetailBtn.classList.toggle('active', revExpMode==='cumulative');
+    document.getElementById('toggleMonthlyDetailLabel').textContent = revExpMode==='cumulative' ? 'Cumulative' : 'Monthly detail';
+    buildRevExpChart(toMonth - fromMonth + 1);
+  });
+}
+const toggleCompareBtn = document.getElementById('toggleCompare');
+if(toggleCompareBtn){
+  toggleCompareBtn.addEventListener('click', ()=>{
+    revExpCompare = !revExpCompare;
+    toggleCompareBtn.classList.toggle('active', revExpCompare);
+    document.getElementById('toggleCompareLabel').textContent = revExpCompare ? 'Comparing' : 'Compare';
+    buildRevExpChart(toMonth - fromMonth + 1);
+  });
+}
 
 
 
