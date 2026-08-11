@@ -958,8 +958,16 @@ async function loadLiveData(){
         if(s.bs_check) D_SRC.bs_check = s.bs_check;
       } else if(type==='glData'){
         const g = parseGLData(rows);
-        Object.keys(g.segments).forEach(k=> D_SRC.segments[k]=g.segments[k]);
-        D_SRC.refunds = g.refunds;
+        // Keep the valid embedded service-line snapshot if a live GL export
+        // parses to no revenue (for example, after a source-layout change).
+        const serviceRevenue = Object.values(g.segments).flat()
+          .reduce((total, value) => total + Math.abs(value || 0), 0);
+        if(serviceRevenue > 0){
+          Object.keys(g.segments).forEach(k=> D_SRC.segments[k]=g.segments[k]);
+          D_SRC.refunds = g.refunds;
+        } else {
+          console.warn('GL data contained no service-line revenue; retaining the last valid segment snapshot.');
+        }
       } else if(type==='staff'){
         const st = parseStaffBreakdown(rows);
         if(Object.keys(st.STAFF).length){
@@ -1096,7 +1104,9 @@ function buildCashChart(n){
 function buildSegStack(n, view){
   const ctx = document.getElementById('segStackChart');
   if(segStackChart) segStackChart.destroy();
-  const names = Object.keys(D.segments);
+  const names = Object.keys(D.segments).filter(name =>
+    D.segments[name].slice(0,n).some(value => Number.isFinite(value) && value !== 0)
+  );
   let datasets;
   if(view==='ngn'){
     datasets = names.map((name,i)=>({
@@ -1126,7 +1136,9 @@ function buildSegStack(n, view){
 function buildSegDonut(n){
   const ctx = document.getElementById('segDonutChart');
   if(segDonutChart) segDonutChart.destroy();
-  const names = Object.keys(D.segments);
+  const names = Object.keys(D.segments).filter(name =>
+    D.segments[name].slice(0,n).some(value => Number.isFinite(value) && value !== 0)
+  );
   const totals = names.map(name=> sumTo(D.segments[name], n));
   segDonutChart = new Chart(ctx, {
     type:'doughnut',
@@ -1135,6 +1147,10 @@ function buildSegDonut(n){
       plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>c.label+': '+nairaFmt(c.parsed)}}} }
   });
   const grand = totals.reduce((a,b)=>a+b,0);
+  const mixCard = ctx.closest('.media-card');
+  mixCard.querySelector('.media-head .t').textContent = `${periodLabel(fromMonth, toMonth)} mix`;
+  mixCard.querySelector('.media-head .d').textContent =
+    `Share of gross service revenue, ${periodLabel(fromMonth, toMonth)}`;
   const legend = document.getElementById('segLegend');
   legend.innerHTML = names.map((name,i)=>{
     const v = totals[i]; const pct = grand? v/grand*100:0;
